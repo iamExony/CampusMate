@@ -8,7 +8,7 @@ Project  repo: https://github.com/iamExony/CampusMate.git
 ```bash
 
 
-conda create -m campusmate python-3.10 -y
+conda create -n campusmate python=3.10 -y
 ```bash
 conda activate campusmate
 
