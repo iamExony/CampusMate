@@ -15,27 +15,36 @@ try:
     from google import genai
     from google.genai import types
     GEMINI_NEW_VERSION = True
-except ImportError:
+    print("✅ Using new Gemini SDK version")
+except ImportError as e:
+    print(f"❌ New Gemini import failed: {e}")
     try:
         # Old version fallback
         import google.generativeai as genai
         GEMINI_NEW_VERSION = False
-    except ImportError:
+        print("✅ Using old Gemini SDK version")
+    except ImportError as e:
+        print(f"❌ Old Gemini import failed: {e}")
         genai = None
         GEMINI_NEW_VERSION = False
 
 # Initialize Gemini client
 client = None
 if settings.GOOGLE_API_KEY:
+    print(f"🔑 Gemini API Key found: {settings.GOOGLE_API_KEY[:10]}...")
     try:
         if GEMINI_NEW_VERSION:
             client = genai.Client(api_key=settings.GOOGLE_API_KEY)
+            print("✅ Gemini client initialized (new version)")
         else:
             genai.configure(api_key=settings.GOOGLE_API_KEY)
             client = genai
+            print("✅ Gemini client initialized (old version)")
     except Exception as e:
-        print(f"Gemini initialization error: {e}")
+        print(f"❌ Gemini initialization error: {e}")
         client = None
+else:
+    print("❌ No Gemini API key found in settings")
 
 def home(request):
     return render(request, 'chatbot/home.html')
@@ -90,6 +99,7 @@ def send_message(request):
         })
         
     except Exception as e:
+        print(f"❌ Error in send_message: {e}")
         return JsonResponse({'error': str(e)}, status=500)
 
 def generate_gemini_response(user_message, conversation):
@@ -98,13 +108,17 @@ def generate_gemini_response(user_message, conversation):
     # First, check knowledge base
     kb_response = check_knowledge_base(user_message)
     if kb_response:
+        print("✅ Using knowledge base response")
         return kb_response
     
     # Check if Gemini client is configured
     if not client or not settings.GOOGLE_API_KEY:
+        print("❌ Gemini not available, using fallback")
         return generate_fallback_response(user_message)
     
     try:
+        print(f"🔍 Attempting Gemini response for: {user_message}")
+        
         # Get conversation history for context
         recent_messages = conversation.messages.order_by('-timestamp')[:4]
         
@@ -124,6 +138,7 @@ def generate_gemini_response(user_message, conversation):
             # New SDK version
             full_prompt = f"{system_instruction}\n\nConversation History:\n{conversation_context}\n\nStudent: {user_message}\n\nAssistant:"
             
+            print("🔄 Calling Gemini API (new version)...")
             response = client.models.generate_content(
                 model="gemini-2.0-flash",
                 contents=full_prompt,
@@ -132,19 +147,23 @@ def generate_gemini_response(user_message, conversation):
                     max_output_tokens=500,
                 )
             )
+            print("✅ Gemini response received")
             return response.text
         else:
             # Old SDK version
             model = genai.GenerativeModel('gemini-pro')
             prompt = f"{system_instruction}\n\nPrevious conversation:\n{conversation_context}\n\nStudent: {user_message}\n\nAssistant:"
             
+            print("🔄 Calling Gemini API (old version)...")
             response = model.generate_content(prompt)
+            print("✅ Gemini response received")
             return response.text
             
     except Exception as e:
-        print(f"Gemini API error: {e}")
+        print(f"❌ Gemini API error: {e}")
         return generate_fallback_response(user_message)
 
+# ... keep the rest of your functions the same (generate_fallback_response, check_knowledge_base, etc.)
 def generate_fallback_response(user_message):
     """Intelligent fallback responses with formatting"""
     user_lower = user_message.lower()
