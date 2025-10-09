@@ -1,8 +1,7 @@
 import json
 import re
 import os
-from google import genai
-from google.genai import types
+import random
 from django.shortcuts import render, get_object_or_404
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
@@ -10,10 +9,33 @@ from django.views.decorators.http import require_http_methods
 from django.conf import settings
 from .models import Conversation, Message, KnowledgeBase
 
+# Try to import Gemini - handle different versions
+try:
+    # New version (your working version)
+    from google import genai
+    from google.genai import types
+    GEMINI_NEW_VERSION = True
+except ImportError:
+    try:
+        # Old version fallback
+        import google.generativeai as genai
+        GEMINI_NEW_VERSION = False
+    except ImportError:
+        genai = None
+        GEMINI_NEW_VERSION = False
+
 # Initialize Gemini client
 client = None
 if settings.GOOGLE_API_KEY:
-    client = genai.Client(api_key=settings.GOOGLE_API_KEY)
+    try:
+        if GEMINI_NEW_VERSION:
+            client = genai.Client(api_key=settings.GOOGLE_API_KEY)
+        else:
+            genai.configure(api_key=settings.GOOGLE_API_KEY)
+            client = genai
+    except Exception as e:
+        print(f"Gemini initialization error: {e}")
+        client = None
 
 def home(request):
     return render(request, 'chatbot/home.html')
@@ -71,7 +93,7 @@ def send_message(request):
         return JsonResponse({'error': str(e)}, status=500)
 
 def generate_gemini_response(user_message, conversation):
-    """Generate response using Google Gemini with the new SDK"""
+    """Generate response using Google Gemini"""
     
     # First, check knowledge base
     kb_response = check_knowledge_base(user_message)
@@ -79,88 +101,57 @@ def generate_gemini_response(user_message, conversation):
         return kb_response
     
     # Check if Gemini client is configured
-    if not client:
+    if not client or not settings.GOOGLE_API_KEY:
         return generate_fallback_response(user_message)
     
     try:
         # Get conversation history for context
-        recent_messages = conversation.messages.order_by('-timestamp')[:6]
+        recent_messages = conversation.messages.order_by('-timestamp')[:4]
         
-        # Build conversation history
-        conversation_history = []
-        for msg in reversed(recent_messages):
-            role = "user" if msg.is_user else "assistant"
-            conversation_history.append(f"{role}: {msg.content}")
+        # Enhanced system instruction
+        system_instruction = """You are EduBot, a helpful university assistant. Provide accurate information about courses, deadlines, campus resources, and general student guidance. Use **bold** for important terms and bullet points for lists. Keep responses under 300 words."""
         
-        # Enhanced system instruction with formatting guidance
-        system_instruction = """You are EduBot, a helpful and friendly university assistant. Your role is to assist students with:
-
-**COURSES & ACADEMICS:**
-- Course information, prerequisites, schedules
-- Professor details, office hours  
-- Department contacts and resources
-
-**DEADLINES & SCHEDULES:**
-- Registration dates, add/drop deadlines
-- Exam schedules, assignment due dates
-- Academic calendar events
-
-**CAMPUS RESOURCES:**
-- Library hours, tutoring centers, study spaces
-- IT support, health services, counseling
-- Career services, internships, job opportunities
-
-**GUIDANCE & SUPPORT:**
-- Study tips, time management strategies
-- Campus life, student organizations
-- University policies and procedures
-
-**RESPONSE STYLE:**
-- Use **bold** for important terms and headings
-- Use bullet points with • for lists
-- Use numbered lists for steps or sequences
-- Keep responses clear and well-structured
-- Be concise but thorough
-
-If unsure about specific information, suggest checking official sources. Keep responses under 300 words."""
-
-        # Build the full content
-        history_text = "\n".join(conversation_history) if conversation_history else "No previous messages"
+        # Build conversation context
+        conversation_context = ""
+        for msg in recent_messages:
+            if msg.is_user:
+                conversation_context += f"Student: {msg.content}\n"
+            else:
+                conversation_context += f"Assistant: {msg.content}\n"
         
-        full_content = f"""System: {system_instruction}
-
-Conversation History:
-{history_text}
-
-Current User Question: {user_message}
-
-Please provide a helpful, formatted response:"""
-
-        # Generate response using Gemini
-        response = client.models.generate_content(
-            model="gemini-2.0-flash",
-            contents=full_content,
-            config=types.GenerateContentConfig(
-                temperature=0.7,
-                max_output_tokens=500,
-                top_p=0.8,
-                top_k=40
+        # Prepare prompt based on Gemini version
+        if GEMINI_NEW_VERSION:
+            # New SDK version
+            full_prompt = f"{system_instruction}\n\nConversation History:\n{conversation_context}\n\nStudent: {user_message}\n\nAssistant:"
+            
+            response = client.models.generate_content(
+                model="gemini-2.0-flash",
+                contents=full_prompt,
+                config=types.GenerateContentConfig(
+                    temperature=0.7,
+                    max_output_tokens=500,
+                )
             )
-        )
-        
-        return response.text
-        
+            return response.text
+        else:
+            # Old SDK version
+            model = genai.GenerativeModel('gemini-pro')
+            prompt = f"{system_instruction}\n\nPrevious conversation:\n{conversation_context}\n\nStudent: {user_message}\n\nAssistant:"
+            
+            response = model.generate_content(prompt)
+            return response.text
+            
     except Exception as e:
         print(f"Gemini API error: {e}")
         return generate_fallback_response(user_message)
-    
+
 def generate_fallback_response(user_message):
     """Intelligent fallback responses with formatting"""
     user_lower = user_message.lower()
     
     fallback_patterns = {
         r'\b(directions?|location|where is|how to get to|how do i get to|route|map)\b': [
-            "**Okay! To give you directions, I need to know:**\n\n1. **Where are you starting from?** (e.g., Faculty of Engineering, Library, Main Gate)\n2. **Where are you trying to go?** (e.g., specific building, department, landmark)\n\nOnce I have that information, I can provide you with the best route. If you're unsure of building names, you can check the university's website for a campus map.",
+            "**Okay! To give you directions, I need to know:**\n\n1. **Where are you starting from?** (e.g., Faculty of Engineering, Library, Main Gate)\n2. **Where are you trying to go?** (e.g., specific building, department, landmark)\n\nOnce I have that information, I can provide you with the best route.",
             "**I can help with directions!** Please tell me:\n\n• **Your starting location** on campus\n• **Your destination** \n\nWith these details, I'll give you clear directions around campus.",
         ],
         r'\b(hello|hi|hey|greetings)\b': [
@@ -173,26 +164,28 @@ def generate_fallback_response(user_message):
         ],
         r'\b(deadline|due|when is|due date)\b': [
             "**Important deadlines** are usually found in:\n\n• **Academic calendar**\n• **Course syllabus** \n• **University website**\n\nWhich specific deadline are you looking for?",
-            "**Deadline information** is available in your **course materials** and the **official academic calendar**. What specific deadline do you need help with?",
+            "**Deadline information** is available in your **course materials** and the **official academic calendar**.",
+        ],
+        r'\b(thank|thanks)\b': [
+            "**You're welcome!** Is there anything else I can help you with?",
+            "**Happy to help!** Let me know if you have any other questions.",
         ],
         r'\b(study|learn|exam|test)\b': [
-            "**For academic success**, try these strategies:\n\n• **Review regularly** and don't cram\n• **Practice actively** with past papers\n• **Use campus resources** like the tutoring center\n• **Form study groups** with classmates",
-            "**Effective studying** involves:\n\n1. **Good time management**\n2. **Active learning techniques**\n3. **Utilizing campus support services**\n4. **Regular breaks** and self-care",
+            "**For academic success**, try these strategies:\n\n• **Review regularly** and don't cram\n• **Practice actively** with past papers\n• **Use campus resources** like the tutoring center",
+            "**Effective studying** involves:\n\n1. **Good time management**\n2. **Active learning techniques**\n3. **Utilizing campus support services**",
         ],
     }
     
     # Check for matching patterns
     for pattern, responses in fallback_patterns.items():
         if re.search(pattern, user_lower):
-            import random
             return random.choice(responses)
     
-    # Default intelligent response with formatting
+    # Default intelligent response
     default_responses = [
-        f"**I'd be happy to help with '{user_message}'!**\n\nAs a university assistant, I specialize in:\n\n• **Course information** and prerequisites\n• **Academic deadlines** and schedules\n• **Campus resources** and services\n• **General student guidance**\n\nCould you provide more specific details about what you need?",
-        f"**That's an interesting question about '{user_message}'!**\n\nI'm here to help with **university-related topics** including:\n\n• Course details and schedules\n• Campus facilities and resources\n• Academic planning and deadlines\n• Student support services\n\nWhat specific information can I help you find?",
+        f"**I'd be happy to help with '{user_message}'!**\n\nAs a university assistant, I specialize in:\n\n• **Course information** and prerequisites\n• **Academic deadlines** and schedules\n• **Campus resources** and services\n• **General student guidance**\n\nCould you provide more specific details?",
+        f"**That's an interesting question!**\n\nI'm here to help with **university-related topics**. Could you tell me more about what you need assistance with?",
     ]
-    import random
     return random.choice(default_responses)
 
 def check_knowledge_base(user_message):
