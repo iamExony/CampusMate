@@ -1,0 +1,20 @@
+import os
+from google import genai
+from google.genai import types
+from dotenv import load_dotenv
+
+load_dotenv()
+
+api_key = os.getenv('GOOGLE_API_KEY')
+
+
+client =genai.Client(api_key=api_key)
+
+response = client.models.generate_content(
+    model="gemini-2.5-flash",
+    contents="how are you?",
+    config=types.GenerateContentConfig(
+        thinking_config=types.ThinkingConfig(thinking_budget=0) # Disables thinking
+    ),
+)
+print(response.text)

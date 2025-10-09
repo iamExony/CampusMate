@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EduBot - Student Assistant</title>
+    {% load static %}
+    <link rel="stylesheet" href="{% static 'css/style.css' %}">
+</head>
+<body>
+    <div class="chat-container">
+        <!-- Sidebar -->
+        <div class="sidebar">
+            <div class="sidebar-header">
+                <h2>EduBot</h2>
+                <button class="new-chat-btn" onclick="startNewChat()">+ New Chat</button>
+            </div>
+            <div class="conversations-list" id="conversationsList">
+                <!-- Conversations will be loaded here -->
+            </div>
+        </div>
+
+        <!-- Main Chat Area -->
+        <div class="main-chat">
+            <div class="chat-header">
+                <h3 id="chatTitle">Welcome to EduBot</h3>
+                <p>Your AI-powered student assistant</p>
+            </div>
+
+            <div class="messages-container" id="messagesContainer">
+                <div class="welcome-message">
+                    <p>Hello! I'm EduBot, your university assistant. I can help you with:</p>
+                    <ul>
+                        <li>Course information and prerequisites</li>
+                        <li>Academic deadlines and schedules</li>
+                        <li>Campus resources and services</li>
+                        <li>General student guidance</li>
+                    </ul>
+                    <p>How can I help you today?</p>
+                </div>
+            </div>
+
+            <div class="input-container">
+                <div class="input-wrapper">
+                    <input 
+                        type="text" 
+                        id="messageInput" 
+                        placeholder="Ask about courses, deadlines, resources..." 
+                        maxlength="1000"
+                    >
+                    <button id="sendButton" onclick="sendMessage()">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
+                        </svg>
+                    </button>
+                </div>
+                <div class="suggestions">
+                    <button class="suggestion-btn" onclick="insertSuggestion('What are the prerequisites for CS101?')">
+                        CS101 Prerequisites
+                    </button>
+                    <button class="suggestion-btn" onclick="insertSuggestion('When is the registration deadline?')">
+                        Registration Deadline
+                    </button>
+                    <button class="suggestion-btn" onclick="insertSuggestion('Library hours this weekend?')">
+                        Library Hours
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Loading Spinner -->
+    <div class="loading-spinner" id="loadingSpinner" style="display: none;">
+        <div class="spinner"></div>
+    </div>
+
+    <script src="{% static 'js/chat.js' %}"></script>
+</body>
+</html>

@@ -1,0 +1,10 @@
+asgiref==3.10.0
+Django==5.2.7
+sqlparse==0.5.3
+tzdata==2025.2
+google-generativeai
+python-dotenv==1.0.0
+gunicorn==21.2.0
+psycopg2-binary==2.9.7
+whitenoise==6.5.0
+dj-database-url==2.0.0
